@@ -3,6 +3,7 @@ import * as github from '@actions/github'
 import { RequestError } from '@octokit/request-error'
 import * as verifiedCommits from './dependabot/verified_commits'
 import * as updateMetadata from './dependabot/update_metadata'
+import * as branchPrefix from './dependabot/branch_prefix'
 import * as output from './dependabot/output'
 import * as util from './dependabot/util'
 
@@ -36,11 +37,20 @@ export async function run (): Promise<void> {
       // Parse metadata
       core.info('Parsing Dependabot metadata')
 
-      const updatedDependencies = await updateMetadata.parse(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title)
+      const branchPrefixes = await branchPrefix.getBranchPrefixes(githubClient, github.context, core.getInput('branch-prefix'))
+      const updatedDependencies = await updateMetadata.parse(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title, branchPrefixes)
 
       if (updatedDependencies.length > 0) {
         output.set(updatedDependencies)
       } else {
+        if (!branchPrefix.findBranchPrefix(branchNames.headName, branchPrefixes)) {
+          core.warning(
+            `The branch "${branchNames.headName}" does not start with a known Dependabot branch prefix ` +
+            `(${branchPrefix.formatBranchPrefixes([...branchPrefixes, branchPrefix.DEFAULT_BRANCH_PREFIX])}). ` +
+            'If you use a custom `pull-request-branch-name.prefix`, grant the `contents: read` permission so that ' +
+            '.github/dependabot.yml can be read, or set the `branch-prefix` input.'
+          )
+        }
         core.setFailed('PR does not contain metadata, nothing to do.')
       }
     } else {

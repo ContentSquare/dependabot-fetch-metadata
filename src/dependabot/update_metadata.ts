@@ -1,4 +1,5 @@
 import * as YAML from 'yaml'
+import { type BranchPrefix, findBranchPrefix } from './branch_prefix'
 
 export interface dependencyAlert {
   alertState: string,
@@ -32,8 +33,8 @@ export interface scoreLookup {
 }
 
 function branchNameToDirectoryName (chunks: string[], delimiter: string, updatedDependencies: any, dependencyGroup: string): string {
-  // We can always slice after the first 2 pieces, because they will always contain "dependabot" followed by the name
-  // of the package ecosystem. e.g. "dependabot/npm_and_yarn".
+  // We can always slice after the first 2 pieces, because they will always contain the branch prefix followed by the
+  // name of the package ecosystem. e.g. "dependabot/npm_and_yarn".
   const sliceStart = 2
   let sliceEnd = chunks.length
 
@@ -66,7 +67,7 @@ function branchNameToDirectoryName (chunks: string[], delimiter: string, updated
   return `/${chunks.slice(sliceStart, sliceEnd).join('/')}`
 }
 
-export async function parse (commitMessage: string, body: string, branchName: string, mainBranch: string, lookup?: alertLookup, getScore?: scoreLookup, title?: string): Promise<Array<updatedDependency>> {
+export async function parse (commitMessage: string, body: string, branchName: string, mainBranch: string, lookup?: alertLookup, getScore?: scoreLookup, title?: string, branchPrefixes?: BranchPrefix[]): Promise<Array<updatedDependency>> {
   const updateRegex = /\b[Uu]pdate .* requirement from \S*? ?(?<from>v?\d\S*) to \S*? ?(?<to>v?\d\S*)/
   const bumpFragment = commitMessage.match(/^Bumps .* from (?<from>v?\d[^ ]*) to (?<to>v?\d[^ ]*)\.$/m)
   const updateFragment = commitMessage.split('\n')[0].match(updateRegex)
@@ -76,13 +77,15 @@ export async function parse (commitMessage: string, body: string, branchName: st
   const newMaintainer = !!body.match(/Maintainer changes/m)
   const lookupFn = lookup ?? (() => Promise.resolve({ alertState: '', ghsaId: '', cvss: 0 }))
   const scoreFn = getScore ?? (() => Promise.resolve(0))
+  const branchPrefix = findBranchPrefix(branchName, branchPrefixes)
 
-  if (yamlFragment?.groups && branchName.startsWith('dependabot')) {
+  if (yamlFragment?.groups && branchPrefix) {
     const data = YAML.parse(yamlFragment.groups.dependencies)
 
-    // Since we are on the `dependabot` branch (9 letters), the 10th letter in the branch name is the delimiter
-    const delim = branchName[10]
-    const chunks = branchName.split(delim)
+    // The branch prefix is followed by the delimiter, e.g. "dependabot/npm_and_yarn/..." or "chore-deps-npm_and_yarn-...".
+    // The prefix is kept as a single chunk, as it may contain the delimiter when it has several segments.
+    const delim = branchPrefix.delimiter
+    const chunks = [branchPrefix.prefix, ...branchName.slice(branchPrefix.prefix.length + 1).split(delim)]
     const prev = bumpFragment?.groups?.from ?? updateFragment?.groups?.from ?? titleUpdateFragment?.groups?.from ?? ''
     const next = bumpFragment?.groups?.to ?? updateFragment?.groups?.to ?? titleUpdateFragment?.groups?.to ?? ''
     const dependencyGroup = groupName?.groups?.name ?? ''

@@ -3,12 +3,15 @@ import { run } from './main'
 import { RequestError } from '@octokit/request-error'
 import * as dependabotCommits from './dependabot/verified_commits'
 import * as util from './dependabot/util'
+import * as branchPrefix from './dependabot/branch_prefix'
 
 beforeEach(() => {
   jest.restoreAllMocks()
 
   jest.spyOn(core, 'info').mockImplementation(jest.fn())
+  jest.spyOn(core, 'warning').mockImplementation(jest.fn())
   jest.spyOn(core, 'setFailed').mockImplementation(jest.fn())
+  jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue([])
   jest.spyOn(core, 'startGroup').mockImplementation(jest.fn())
   jest.spyOn(core, 'getBooleanInput').mockReturnValue(false)
   jest.spyOn(util, 'getBody').mockReturnValue(`
@@ -540,4 +543,115 @@ test('it sets the action to failed if there is a request error', async () => {
    
   expect(dependabotCommits.getAlert).not.toHaveBeenCalled
    
+})
+
+describe('custom branch prefixes', () => {
+  const mockCommitMessage =
+    'Bumps [coffee-rails](https://github.com/rails/coffee-rails) from 4.0.1 to 4.2.2.\n' +
+    '- [Release notes](https://github.com/rails/coffee-rails/releases)\n' +
+    '- [Changelog](https://github.com/rails/coffee-rails/blob/master/CHANGELOG.md)\n' +
+    '- [Commits](rails/coffee-rails@v4.0.1...v4.2.2)\n' +
+    '\n' +
+    '---\n' +
+    'updated-dependencies:\n' +
+    '- dependency-name: coffee-rails\n' +
+    '  dependency-type: direct:production\n' +
+    '  update-type: version-update:semver-minor\n' +
+    '...\n' +
+    '\n' +
+    'Signed-off-by: dependabot[bot] <support@github.com>'
+
+  const mockInputs = (inputs: Record<string, string>) => {
+    jest.spyOn(core, 'getInput').mockImplementation(jest.fn((name: string) => inputs[name] ?? ''))
+  }
+
+  beforeEach(() => {
+    jest.spyOn(dependabotCommits, 'getMessage').mockImplementation(jest.fn(
+      () => Promise.resolve(mockCommitMessage)
+    ))
+    jest.spyOn(core, 'setOutput').mockImplementation(jest.fn())
+  })
+
+  test('it passes the branch-prefix input to the branch prefix lookup', async () => {
+    mockInputs({ 'github-token': 'mock-token', 'branch-prefix': 'chore/deps' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore/deps/npm_and_yarn/coffee-rails-4.2.2', baseName: 'main' })
+    jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue(branchPrefix.parseBranchPrefixInput('chore/deps'))
+
+    await run()
+
+    expect(branchPrefix.getBranchPrefixes).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'chore/deps')
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.warning).not.toHaveBeenCalled()
+    expect(core.setOutput).toHaveBeenCalledWith('package-ecosystem', 'npm_and_yarn')
+    expect(core.setOutput).toHaveBeenCalledWith('directory', '/')
+  })
+
+  test('it sets the outputs when the branch uses a custom prefix', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore-deps-npm_and_yarn-api-coffee-rails-4.2.2', baseName: 'trunk' })
+    jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue([{ prefix: 'chore-deps', separator: '-' }])
+
+    await run()
+
+    expect(branchPrefix.getBranchPrefixes).toHaveBeenCalledWith(expect.anything(), expect.anything(), '')
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.warning).not.toHaveBeenCalled()
+    expect(core.setOutput).toHaveBeenCalledWith('dependency-names', 'coffee-rails')
+    expect(core.setOutput).toHaveBeenCalledWith('package-ecosystem', 'npm_and_yarn')
+    expect(core.setOutput).toHaveBeenCalledWith('directory', '/api')
+    expect(core.setOutput).toHaveBeenCalledWith('target-branch', 'trunk')
+  })
+
+  test('it warns when the branch does not start with a known prefix', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore/deps/npm_and_yarn/coffee-rails-4.2.2', baseName: 'main' })
+
+    await run()
+
+    expect(core.warning).toHaveBeenCalledTimes(1)
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('The branch "chore/deps/npm_and_yarn/coffee-rails-4.2.2" does not start with a known Dependabot branch prefix ("dependabot").')
+    )
+    expect(core.setFailed).toHaveBeenCalledWith('PR does not contain metadata, nothing to do.')
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
+
+  test('it lists the configured prefixes in the warning', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'renovate/coffee-rails-4.x', baseName: 'main' })
+    jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue([{ prefix: 'deps', separator: '/' }])
+
+    await run()
+
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('known Dependabot branch prefix ("deps", "dependabot")')
+    )
+    expect(core.setFailed).toHaveBeenCalledWith('PR does not contain metadata, nothing to do.')
+  })
+
+  test('it does not warn when the branch has a known prefix but no metadata', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'dependabot/npm_and_yarn/coffee-rails-4.2.2', baseName: 'main' })
+    jest.spyOn(dependabotCommits, 'getMessage').mockImplementation(jest.fn(
+      () => Promise.resolve('Just a commit message, nothing to see here.')
+    ))
+
+    await run()
+
+    expect(core.warning).not.toHaveBeenCalled()
+    expect(core.setFailed).toHaveBeenCalledWith('PR does not contain metadata, nothing to do.')
+  })
+
+  test('it does not look up branch prefixes when the PR is not from Dependabot', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
+    jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore/deps/npm_and_yarn/coffee-rails-4.2.2', baseName: 'main' })
+    jest.spyOn(dependabotCommits, 'getMessage').mockImplementation(jest.fn(
+      () => Promise.resolve(false)
+    ))
+
+    await run()
+
+    expect(branchPrefix.getBranchPrefixes).not.toHaveBeenCalled()
+    expect(core.setFailed).toHaveBeenCalledWith('PR is not from Dependabot, nothing to do.')
+  })
 })

@@ -19535,7 +19535,7 @@ var require_fast_content_type_parse = __commonJS({
     var defaultContentType = { type: "", parameters: new NullObject() };
     Object.freeze(defaultContentType.parameters);
     Object.freeze(defaultContentType);
-    function parse4(header) {
+    function parse5(header) {
       if (typeof header !== "string") {
         throw new TypeError("argument header is required and must be a string");
       }
@@ -19611,8 +19611,8 @@ var require_fast_content_type_parse = __commonJS({
       }
       return result;
     }
-    module2.exports.default = { parse: parse4, safeParse: safeParse2 };
-    module2.exports.parse = parse4;
+    module2.exports.default = { parse: parse5, safeParse: safeParse2 };
+    module2.exports.parse = parse5;
     module2.exports.safeParse = safeParse2;
     module2.exports.defaultContentType = defaultContentType;
   }
@@ -26848,7 +26848,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse4(src, reviver, options) {
+    function parse5(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -26889,7 +26889,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports2.parse = parse4;
+    exports2.parse = parse5;
     exports2.parseAllDocuments = parseAllDocuments;
     exports2.parseDocument = parseDocument;
     exports2.stringify = stringify;
@@ -31661,7 +31661,135 @@ async function getCompatibility(name, oldVersion, newVersion, ecosystem) {
 }
 
 // src/dependabot/update_metadata.ts
+var YAML2 = __toESM(require_dist());
+
+// src/dependabot/branch_prefix.ts
 var YAML = __toESM(require_dist());
+var DEFAULT_BRANCH_PREFIX = { prefix: "dependabot" };
+var DEFAULT_SEPARATOR = "/";
+var SUPPORTED_SEPARATORS = ["/", "-", "_"];
+var DEPENDABOT_CONFIG_PATHS = [".github/dependabot.yml", ".github/dependabot.yaml"];
+function normalizeBranchPrefix(prefix, separator) {
+  return prefix.replace(/[^A-Za-z0-9/\-_.(){}]/g, "").replace(/\/\./g, "/dot-").replace(/\.{2,}/g, ".").replace(/\/{2,}/g, "/").replace(/\/+$/, "").split("/").join(separator);
+}
+function parseBranchPrefixInput(input) {
+  const prefixes = input.split(/[,\n]/).map((prefix) => prefix.trim()).filter((prefix) => prefix.length > 0);
+  return uniqueBranchPrefixes(prefixes.flatMap(
+    (prefix) => SUPPORTED_SEPARATORS.map((separator) => ({ prefix: normalizeBranchPrefix(prefix, separator), separator }))
+  ));
+}
+function parseBranchPrefixConfig(configContent) {
+  let config;
+  try {
+    config = YAML.parse(configContent, { merge: true });
+  } catch (error2) {
+    debug(`Unable to parse the Dependabot configuration: ${errorMessage(error2)}`);
+    return [];
+  }
+  if (!isRecord(config)) {
+    return [];
+  }
+  const entries = [];
+  if (Array.isArray(config.updates)) {
+    entries.push(...config.updates);
+  }
+  if (isRecord(config["multi-ecosystem-groups"])) {
+    entries.push(...Object.values(config["multi-ecosystem-groups"]));
+  }
+  const branchPrefixes = [];
+  for (const entry of entries) {
+    const branchNameConfig = isRecord(entry) ? entry["pull-request-branch-name"] : void 0;
+    if (!isRecord(branchNameConfig) || typeof branchNameConfig.prefix !== "string") {
+      continue;
+    }
+    const separator = typeof branchNameConfig.separator === "string" && branchNameConfig.separator.length === 1 ? branchNameConfig.separator : DEFAULT_SEPARATOR;
+    const prefix = normalizeBranchPrefix(branchNameConfig.prefix, separator);
+    if (prefix.length > 0) {
+      branchPrefixes.push({ prefix, separator });
+    }
+  }
+  return uniqueBranchPrefixes(branchPrefixes);
+}
+function findBranchPrefix(branchName, branchPrefixes = []) {
+  let match = null;
+  for (const { prefix, separator } of [...branchPrefixes, DEFAULT_BRANCH_PREFIX]) {
+    if (prefix.length === 0 || branchName.length <= prefix.length || !branchName.startsWith(prefix)) {
+      continue;
+    }
+    const delimiter = branchName[prefix.length];
+    if (separator !== void 0 && delimiter !== separator) {
+      continue;
+    }
+    if (!match || prefix.length > match.prefix.length) {
+      match = { prefix, delimiter };
+    }
+  }
+  return match;
+}
+async function getBranchPrefixes(client, context3, input = "") {
+  if (input.trim().length > 0) {
+    const branchPrefixes = parseBranchPrefixInput(input);
+    debug(`Using the branch prefixes from the \`branch-prefix\` input: ${formatBranchPrefixes(branchPrefixes)}`);
+    return branchPrefixes;
+  }
+  for (const path of DEPENDABOT_CONFIG_PATHS) {
+    let configContent;
+    try {
+      const { data } = await client.rest.repos.getContent({
+        owner: context3.repo.owner,
+        repo: context3.repo.repo,
+        path
+      });
+      if (Array.isArray(data) || data.type !== "file" || data.encoding !== "base64" || typeof data.content !== "string") {
+        debug(`Ignoring ${path} as it is not a readable file`);
+        continue;
+      }
+      configContent = Buffer.from(data.content, "base64").toString("utf8");
+    } catch (error2) {
+      if (errorStatus(error2) === 404) {
+        debug(`${path} not found`);
+        continue;
+      }
+      info(`Unable to read ${path} to detect custom branch prefixes, falling back to the default "${DEFAULT_BRANCH_PREFIX.prefix}" prefix: ${errorMessage(error2)}`);
+      return [];
+    }
+    const branchPrefixes = parseBranchPrefixConfig(configContent);
+    if (branchPrefixes.length > 0) {
+      info(`Found custom branch prefixes in ${path}: ${formatBranchPrefixes(branchPrefixes)}`);
+    } else {
+      debug(`No custom branch prefix configured in ${path}`);
+    }
+    return branchPrefixes;
+  }
+  debug("No Dependabot configuration file found, falling back to the default branch prefix");
+  return [];
+}
+function formatBranchPrefixes(branchPrefixes) {
+  return [...new Set(branchPrefixes.map(({ prefix }) => `"${prefix}"`))].join(", ");
+}
+function uniqueBranchPrefixes(branchPrefixes) {
+  const seen = /* @__PURE__ */ new Set();
+  return branchPrefixes.filter(({ prefix, separator }) => {
+    const key = `${prefix}
+${separator}`;
+    if (prefix.length === 0 || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function errorStatus(error2) {
+  return isRecord(error2) && typeof error2.status === "number" ? error2.status : void 0;
+}
+function errorMessage(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+
+// src/dependabot/update_metadata.ts
 function branchNameToDirectoryName(chunks, delimiter, updatedDependencies, dependencyGroup) {
   const sliceStart = 2;
   let sliceEnd = chunks.length;
@@ -31680,7 +31808,7 @@ function branchNameToDirectoryName(chunks, delimiter, updatedDependencies, depen
   });
   return `/${chunks.slice(sliceStart, sliceEnd).join("/")}`;
 }
-async function parse3(commitMessage, body, branchName, mainBranch, lookup, getScore, title) {
+async function parse4(commitMessage, body, branchName, mainBranch, lookup, getScore, title, branchPrefixes) {
   const updateRegex = /\b[Uu]pdate .* requirement from \S*? ?(?<from>v?\d\S*) to \S*? ?(?<to>v?\d\S*)/;
   const bumpFragment = commitMessage.match(/^Bumps .* from (?<from>v?\d[^ ]*) to (?<to>v?\d[^ ]*)\.$/m);
   const updateFragment = commitMessage.split("\n")[0].match(updateRegex);
@@ -31690,10 +31818,11 @@ async function parse3(commitMessage, body, branchName, mainBranch, lookup, getSc
   const newMaintainer = !!body.match(/Maintainer changes/m);
   const lookupFn = lookup ?? (() => Promise.resolve({ alertState: "", ghsaId: "", cvss: 0 }));
   const scoreFn = getScore ?? (() => Promise.resolve(0));
-  if (yamlFragment?.groups && branchName.startsWith("dependabot")) {
-    const data = YAML.parse(yamlFragment.groups.dependencies);
-    const delim = branchName[10];
-    const chunks = branchName.split(delim);
+  const branchPrefix = findBranchPrefix(branchName, branchPrefixes);
+  if (yamlFragment?.groups && branchPrefix) {
+    const data = YAML2.parse(yamlFragment.groups.dependencies);
+    const delim = branchPrefix.delimiter;
+    const chunks = [branchPrefix.prefix, ...branchName.slice(branchPrefix.prefix.length + 1).split(delim)];
     const prev = bumpFragment?.groups?.from ?? updateFragment?.groups?.from ?? titleUpdateFragment?.groups?.from ?? "";
     const next = bumpFragment?.groups?.to ?? updateFragment?.groups?.to ?? titleUpdateFragment?.groups?.to ?? "";
     const dependencyGroup = groupName?.groups?.name ?? "";
@@ -31879,10 +32008,16 @@ async function run() {
     const scoreLookup = getInput("compat-lookup") ? getCompatibility : void 0;
     if (commitMessage) {
       info("Parsing Dependabot metadata");
-      const updatedDependencies = await parse3(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title);
+      const branchPrefixes = await getBranchPrefixes(githubClient, context2, getInput("branch-prefix"));
+      const updatedDependencies = await parse4(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title, branchPrefixes);
       if (updatedDependencies.length > 0) {
         set(updatedDependencies);
       } else {
+        if (!findBranchPrefix(branchNames.headName, branchPrefixes)) {
+          warning(
+            `The branch "${branchNames.headName}" does not start with a known Dependabot branch prefix (${formatBranchPrefixes([...branchPrefixes, DEFAULT_BRANCH_PREFIX])}). If you use a custom \`pull-request-branch-name.prefix\`, grant the \`contents: read\` permission so that .github/dependabot.yml can be read, or set the \`branch-prefix\` input.`
+          );
+        }
         setFailed("PR does not contain metadata, nothing to do.");
       }
     } else {
