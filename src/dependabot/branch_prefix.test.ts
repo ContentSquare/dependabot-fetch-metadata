@@ -8,8 +8,7 @@ import {
   formatBranchPrefixes,
   getBranchPrefixes,
   normalizeBranchPrefix,
-  parseBranchPrefixConfig,
-  parseBranchPrefixInput
+  parseBranchPrefixConfig
 } from './branch_prefix'
 
 const CONTENTS_PATH = '/repos/dependabot/dependabot/contents'
@@ -68,35 +67,6 @@ describe('normalizeBranchPrefix', () => {
     expect(normalizeBranchPrefix('deps/', '/')).toEqual('deps')
     expect(normalizeBranchPrefix('deps(x){y}', '/')).toEqual('deps(x){y}')
     expect(normalizeBranchPrefix('', '/')).toEqual('')
-  })
-})
-
-describe('parseBranchPrefixInput', () => {
-  test('it returns no prefix for an empty input', () => {
-    expect(parseBranchPrefixInput('')).toEqual([])
-    expect(parseBranchPrefixInput(' , \n ')).toEqual([])
-  })
-
-  test('it builds a candidate for each supported separator', () => {
-    expect(parseBranchPrefixInput('deps')).toEqual([
-      { prefix: 'deps', separator: '/' },
-      { prefix: 'deps', separator: '-' },
-      { prefix: 'deps', separator: '_' }
-    ])
-  })
-
-  test('it supports comma and newline separated lists', () => {
-    expect(parseBranchPrefixInput('chore/deps, renovate\nbot ')).toEqual([
-      { prefix: 'chore/deps', separator: '/' },
-      { prefix: 'chore-deps', separator: '-' },
-      { prefix: 'chore_deps', separator: '_' },
-      { prefix: 'renovate', separator: '/' },
-      { prefix: 'renovate', separator: '-' },
-      { prefix: 'renovate', separator: '_' },
-      { prefix: 'bot', separator: '/' },
-      { prefix: 'bot', separator: '-' },
-      { prefix: 'bot', separator: '_' }
-    ])
   })
 })
 
@@ -262,15 +232,15 @@ describe('findBranchPrefix', () => {
 
 describe('formatBranchPrefixes', () => {
   test('it lists the unique prefixes', () => {
-    expect(formatBranchPrefixes([...parseBranchPrefixInput('deps'), DEFAULT_BRANCH_PREFIX])).toEqual('"deps", "dependabot"')
+    expect(formatBranchPrefixes([
+      { prefix: 'deps', separator: '/' },
+      { prefix: 'deps', separator: '-' },
+      DEFAULT_BRANCH_PREFIX
+    ])).toEqual('"deps", "dependabot"')
   })
 })
 
 describe('getBranchPrefixes', () => {
-  test('it uses the input without reading the Dependabot configuration', async () => {
-    expect(await getBranchPrefixes(mockGitHubClient, new Context(), 'deps')).toEqual(parseBranchPrefixInput('deps'))
-  })
-
   test('it reads the prefixes from .github/dependabot.yml', async () => {
     const config = 'version: 2\nupdates:\n  - package-ecosystem: npm\n    pull-request-branch-name:\n      prefix: chore/deps\n'
     const scope = nock('https://api.github.com').get(YML_PATH).reply(200, fileContent(config))

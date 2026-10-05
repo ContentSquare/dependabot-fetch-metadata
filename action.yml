@@ -7,9 +7,6 @@ inputs:
   alert-lookup:
     type: boolean
     description: 'If true, then populate the `alert-state`, `ghsa-id` and `cvss` outputs'
-  branch-prefix:
-    description: 'A comma or newline separated list of custom branch prefixes, as configured with `pull-request-branch-name.prefix` in `dependabot.yml`. When empty, the prefixes are read from `.github/dependabot.yml` (requires the `contents: read` permission). The default `dependabot` prefix is always supported'
-    default: ''
   compat-lookup:
     type: boolean
     description: 'If true, then populate the `compatibility-score` output'

@@ -20,7 +20,6 @@ export interface BranchPrefixMatch {
 export const DEFAULT_BRANCH_PREFIX: BranchPrefix = { prefix: 'dependabot' }
 
 const DEFAULT_SEPARATOR = '/'
-const SUPPORTED_SEPARATORS = ['/', '-', '_']
 const DEPENDABOT_CONFIG_PATHS = ['.github/dependabot.yml', '.github/dependabot.yaml']
 
 /**
@@ -37,18 +36,6 @@ export function normalizeBranchPrefix (prefix: string, separator: string): strin
     .replace(/\/+$/, '')
     .split('/')
     .join(separator)
-}
-
-/**
- * Builds the branch prefixes from the `branch-prefix` input, a comma or newline separated list of prefixes.
- * Since the separator is unknown, a candidate is created for each separator supported by Dependabot.
- */
-export function parseBranchPrefixInput (input: string): BranchPrefix[] {
-  const prefixes = input.split(/[,\n]/).map(prefix => prefix.trim()).filter(prefix => prefix.length > 0)
-
-  return uniqueBranchPrefixes(prefixes.flatMap(prefix =>
-    SUPPORTED_SEPARATORS.map(separator => ({ prefix: normalizeBranchPrefix(prefix, separator), separator }))
-  ))
 }
 
 /**
@@ -124,17 +111,11 @@ export function findBranchPrefix (branchName: string, branchPrefixes: BranchPref
 /**
  * Resolves the custom branch prefixes Dependabot may use for the repository.
  *
- * When the `branch-prefix` input is set, it takes precedence. Otherwise the prefixes are read from the Dependabot
- * configuration file on the default branch, which is where Dependabot reads it from. This never throws: when the
- * configuration file cannot be read, no custom prefix is returned and only the default "dependabot" prefix applies.
+ * The prefixes are read from the Dependabot configuration file on the default branch, which is where Dependabot reads
+ * it from. This never throws: when the configuration file cannot be read, no custom prefix is returned and only the
+ * default "dependabot" prefix applies.
  */
-export async function getBranchPrefixes (client: InstanceType<typeof GitHub>, context: Context, input = ''): Promise<BranchPrefix[]> {
-  if (input.trim().length > 0) {
-    const branchPrefixes = parseBranchPrefixInput(input)
-    core.debug(`Using the branch prefixes from the \`branch-prefix\` input: ${formatBranchPrefixes(branchPrefixes)}`)
-    return branchPrefixes
-  }
-
+export async function getBranchPrefixes (client: InstanceType<typeof GitHub>, context: Context): Promise<BranchPrefix[]> {
   for (const path of DEPENDABOT_CONFIG_PATHS) {
     let configContent: string
     try {

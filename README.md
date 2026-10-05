@@ -50,11 +50,6 @@ Supported inputs are:
   - If `true`, then populate the `compatibility-score` output.
   - Defaults to `false`
   - Note: the `github-token` field must be set to a [personal access token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token).
-- `branch-prefix` (string)
-  - A comma or newline separated list of the custom branch prefixes configured with [`pull-request-branch-name.prefix`](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#pull-request-branch-name--) in `dependabot.yml`, e.g. `chore/deps`.
-  - When empty, the prefixes are read from `.github/dependabot.yml` (or `.github/dependabot.yaml`), which requires the `contents: read` permission. For more details, see [this](#custom-branch-prefixes)
-  - The default `dependabot` prefix is always supported.
-  - Defaults to `''`
 - `skip-commit-verification` (boolean)
   - If `true`, then the action will not expect the commits to have a verification signature. **It is required to set this to 'true' in GitHub Enterprise Server**
   - Defaults to `false`
@@ -134,20 +129,9 @@ permissions:
   pull-requests: read
 ```
 
-Alternatively, set the `branch-prefix` input to skip reading the configuration file. The separator is detected
-automatically:
-
-```yaml
-- name: Fetch Dependabot metadata
-  id: dependabot-metadata
-  uses: dependabot/fetch-metadata@v3
-  with:
-    branch-prefix: chore/deps
-```
-
 The default `dependabot` prefix is always supported. When the configuration file cannot be read, only the default
 prefix is used, and a PR whose branch does not start with a known prefix fails with a warning explaining how to
-configure the custom prefix.
+grant access to the configuration file.
 
 > [!NOTE]
 > The `template`, `word-separator`, `branch-name-case` and `max-length` options of `pull-request-branch-name` change the

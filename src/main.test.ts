@@ -572,28 +572,27 @@ describe('custom branch prefixes', () => {
     jest.spyOn(core, 'setOutput').mockImplementation(jest.fn())
   })
 
-  test('it passes the branch-prefix input to the branch prefix lookup', async () => {
-    mockInputs({ 'github-token': 'mock-token', 'branch-prefix': 'chore/deps' })
+  test('it sets the outputs when the branch uses a custom prefix', async () => {
+    mockInputs({ 'github-token': 'mock-token' })
     jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore/deps/npm_and_yarn/coffee-rails-4.2.2', baseName: 'main' })
-    jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue(branchPrefix.parseBranchPrefixInput('chore/deps'))
+    jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue([{ prefix: 'chore/deps', separator: '/' }])
 
     await run()
 
-    expect(branchPrefix.getBranchPrefixes).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'chore/deps')
+    expect(branchPrefix.getBranchPrefixes).toHaveBeenCalledTimes(1)
     expect(core.setFailed).not.toHaveBeenCalled()
     expect(core.warning).not.toHaveBeenCalled()
     expect(core.setOutput).toHaveBeenCalledWith('package-ecosystem', 'npm_and_yarn')
     expect(core.setOutput).toHaveBeenCalledWith('directory', '/')
   })
 
-  test('it sets the outputs when the branch uses a custom prefix', async () => {
+  test('it sets the outputs when the branch uses a custom prefix and separator', async () => {
     mockInputs({ 'github-token': 'mock-token' })
     jest.spyOn(util, 'getBranchNames').mockReturnValue({ headName: 'chore-deps-npm_and_yarn-api-coffee-rails-4.2.2', baseName: 'trunk' })
     jest.spyOn(branchPrefix, 'getBranchPrefixes').mockResolvedValue([{ prefix: 'chore-deps', separator: '-' }])
 
     await run()
 
-    expect(branchPrefix.getBranchPrefixes).toHaveBeenCalledWith(expect.anything(), expect.anything(), '')
     expect(core.setFailed).not.toHaveBeenCalled()
     expect(core.warning).not.toHaveBeenCalled()
     expect(core.setOutput).toHaveBeenCalledWith('dependency-names', 'coffee-rails')

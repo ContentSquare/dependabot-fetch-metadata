@@ -31667,16 +31667,9 @@ var YAML2 = __toESM(require_dist());
 var YAML = __toESM(require_dist());
 var DEFAULT_BRANCH_PREFIX = { prefix: "dependabot" };
 var DEFAULT_SEPARATOR = "/";
-var SUPPORTED_SEPARATORS = ["/", "-", "_"];
 var DEPENDABOT_CONFIG_PATHS = [".github/dependabot.yml", ".github/dependabot.yaml"];
 function normalizeBranchPrefix(prefix, separator) {
   return prefix.replace(/[^A-Za-z0-9/\-_.(){}]/g, "").replace(/\/\./g, "/dot-").replace(/\.{2,}/g, ".").replace(/\/{2,}/g, "/").replace(/\/+$/, "").split("/").join(separator);
-}
-function parseBranchPrefixInput(input) {
-  const prefixes = input.split(/[,\n]/).map((prefix) => prefix.trim()).filter((prefix) => prefix.length > 0);
-  return uniqueBranchPrefixes(prefixes.flatMap(
-    (prefix) => SUPPORTED_SEPARATORS.map((separator) => ({ prefix: normalizeBranchPrefix(prefix, separator), separator }))
-  ));
 }
 function parseBranchPrefixConfig(configContent) {
   let config;
@@ -31726,12 +31719,7 @@ function findBranchPrefix(branchName, branchPrefixes = []) {
   }
   return match;
 }
-async function getBranchPrefixes(client, context3, input = "") {
-  if (input.trim().length > 0) {
-    const branchPrefixes = parseBranchPrefixInput(input);
-    debug(`Using the branch prefixes from the \`branch-prefix\` input: ${formatBranchPrefixes(branchPrefixes)}`);
-    return branchPrefixes;
-  }
+async function getBranchPrefixes(client, context3) {
   for (const path of DEPENDABOT_CONFIG_PATHS) {
     let configContent;
     try {
@@ -32008,14 +31996,14 @@ async function run() {
     const scoreLookup = getInput("compat-lookup") ? getCompatibility : void 0;
     if (commitMessage) {
       info("Parsing Dependabot metadata");
-      const branchPrefixes = await getBranchPrefixes(githubClient, context2, getInput("branch-prefix"));
+      const branchPrefixes = await getBranchPrefixes(githubClient, context2);
       const updatedDependencies = await parse4(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title, branchPrefixes);
       if (updatedDependencies.length > 0) {
         set(updatedDependencies);
       } else {
         if (!findBranchPrefix(branchNames.headName, branchPrefixes)) {
           warning(
-            `The branch "${branchNames.headName}" does not start with a known Dependabot branch prefix (${formatBranchPrefixes([...branchPrefixes, DEFAULT_BRANCH_PREFIX])}). If you use a custom \`pull-request-branch-name.prefix\`, grant the \`contents: read\` permission so that .github/dependabot.yml can be read, or set the \`branch-prefix\` input.`
+            `The branch "${branchNames.headName}" does not start with a known Dependabot branch prefix (${formatBranchPrefixes([...branchPrefixes, DEFAULT_BRANCH_PREFIX])}). If you use a custom \`pull-request-branch-name.prefix\`, grant the \`contents: read\` permission so that .github/dependabot.yml can be read.`
           );
         }
         setFailed("PR does not contain metadata, nothing to do.");

@@ -37,7 +37,7 @@ export async function run (): Promise<void> {
       // Parse metadata
       core.info('Parsing Dependabot metadata')
 
-      const branchPrefixes = await branchPrefix.getBranchPrefixes(githubClient, github.context, core.getInput('branch-prefix'))
+      const branchPrefixes = await branchPrefix.getBranchPrefixes(githubClient, github.context)
       const updatedDependencies = await updateMetadata.parse(commitMessage, body, branchNames.headName, branchNames.baseName, alertLookup, scoreLookup, title, branchPrefixes)
 
       if (updatedDependencies.length > 0) {
@@ -48,7 +48,7 @@ export async function run (): Promise<void> {
             `The branch "${branchNames.headName}" does not start with a known Dependabot branch prefix ` +
             `(${branchPrefix.formatBranchPrefixes([...branchPrefixes, branchPrefix.DEFAULT_BRANCH_PREFIX])}). ` +
             'If you use a custom `pull-request-branch-name.prefix`, grant the `contents: read` permission so that ' +
-            '.github/dependabot.yml can be read, or set the `branch-prefix` input.'
+            '.github/dependabot.yml can be read.'
           )
         }
         core.setFailed('PR does not contain metadata, nothing to do.')
