@@ -7,6 +7,7 @@ import { hideBin } from 'yargs/helpers'
 
 import { getMessage, getAlert, getCompatibility } from './dependabot/verified_commits'
 import { parse } from './dependabot/update_metadata'
+import { getBranchPrefixes } from './dependabot/branch_prefix'
 import { getBranchNames, parseNwo } from './dependabot/util'
 
 async function check (args: any): Promise<void> {
@@ -52,8 +53,9 @@ async function check (args: any): Promise<void> {
       console.log('This appears to be a valid Dependabot Pull Request.')
       const branchNames = getBranchNames(newContext)
       const lookupFn = (name: string, version: string, directory: string) => getAlert(name, version, directory, githubClient, actionContext)
+      const branchPrefixes = await getBranchPrefixes(githubClient, actionContext)
 
-      const updatedDependencies = await parse(commitMessage, pullRequest.body, branchNames.headName, branchNames.baseName, lookupFn, getCompatibility)
+      const updatedDependencies = await parse(commitMessage, pullRequest.body, branchNames.headName, branchNames.baseName, lookupFn, getCompatibility, undefined, branchPrefixes)
 
       if (updatedDependencies.length > 0) {
         console.log('Updated dependencies:')

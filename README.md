@@ -99,6 +99,46 @@ useful automation for your Dependabot PRs.
 > [!NOTE]
 > Workflows triggered by Dependabot on the `pull_request` event [run with a read-only `GITHUB_TOKEN`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions-for-workflow-runs-triggered-by-dependabot) and cannot access user-defined repository or organization secrets. The GitHub-provided token is still available, but only with read-only permissions (prefer `github.token` when referring to that built-in token in examples). If your workflow needs write permissions or access to user-defined secrets, use the [`pull_request_target`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target) event or a separate workflow triggered by [`workflow_run`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The examples below use `pull_request_target` for this reason.
 
+### Custom branch prefixes
+
+By default, Dependabot branch names start with `dependabot`, e.g. `dependabot/npm_and_yarn/lodash-4.17.21`. The action
+relies on the branch name to populate the `directory`, `package-ecosystem` and `target-branch` outputs, so it needs to
+know the custom prefix when [`pull-request-branch-name.prefix`](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#pull-request-branch-name--)
+is set in the Dependabot configuration:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    pull-request-branch-name:
+      prefix: chore/deps
+      separator: "-"
+```
+
+The custom prefixes are automatically read from the `updates` and `multi-ecosystem-groups` entries of
+`.github/dependabot.yml` (or `.github/dependabot.yaml`) on the default branch, which is where Dependabot reads its
+configuration from. This requires the `contents: read` permission:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: read
+```
+
+The default `dependabot` prefix is always supported. When the configuration file cannot be read, only the default
+prefix is used, and a PR whose branch does not start with a known prefix fails with a warning explaining how to
+grant access to the configuration file.
+
+> [!NOTE]
+> The `template`, `word-separator`, `branch-name-case` and `max-length` options of `pull-request-branch-name` change the
+> rest of the branch name and are not supported: the `directory`, `package-ecosystem` and `target-branch` outputs may be
+> inaccurate when they are used. This is also the case with the `_` separator when the package ecosystem contains an
+> underscore, e.g. `npm_and_yarn` or `github_actions`.
+
 ### Auto-approving
 
 Since the `dependabot/fetch-metadata` Action will set a failure code if it cannot find any metadata, you can

@@ -723,3 +723,96 @@ test('it handles duplicate dependency names in metadata links without mixing ver
   expect(updatedDependencies[1].newVersion).toEqual('4.0.2')
   expect(updatedDependencies[1].updateType).toEqual('version-update:semver-patch')
 })
+
+describe('custom branch prefixes', () => {
+  const commitMessage =
+    'Bumps [lodash](https://github.com/lodash/lodash) from 4.17.20 to 4.17.21.\n' +
+    '- [Release notes](https://github.com/lodash/lodash/releases)\n' +
+    '- [Commits](lodash/lodash@4.17.20...4.17.21)\n' +
+    '\n' +
+    '---\n' +
+    'updated-dependencies:\n' +
+    '- dependency-name: lodash\n' +
+    '  dependency-type: direct:production\n' +
+    '  update-type: version-update:semver-patch\n' +
+    '...\n' +
+    '\n' +
+    'Signed-off-by: dependabot[bot] <support@github.com>'
+
+  test('it handles a custom prefix', async () => {
+    const getScore = jest.fn(async () => Promise.resolve(42))
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'deps/npm_and_yarn/lodash-4.17.21', 'main', undefined, getScore, undefined, [{ prefix: 'deps', separator: '/' }])
+
+    expect(updatedDependencies).toHaveLength(1)
+    expect(updatedDependencies[0].dependencyName).toEqual('lodash')
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/')
+    expect(updatedDependencies[0].targetBranch).toEqual('main')
+    expect(updatedDependencies[0].prevVersion).toEqual('4.17.20')
+    expect(updatedDependencies[0].newVersion).toEqual('4.17.21')
+    expect(updatedDependencies[0].compatScore).toEqual(42)
+    expect(getScore).toHaveBeenCalledWith('lodash', '4.17.20', '4.17.21', 'npm_and_yarn')
+  })
+
+  test('it handles a custom prefix with several segments and manifest files in nested directories', async () => {
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'chore/deps/npm_and_yarn/nested/dir/lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'chore/deps', separator: '/' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/nested/dir')
+  })
+
+  test('it handles a custom prefix with several segments and a hyphen separator', async () => {
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'chore-deps-npm_and_yarn-nested-lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'chore-deps', separator: '-' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/nested')
+  })
+
+  test('it handles a custom prefix with an underscore separator when the package ecosystem has no underscore', async () => {
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'chore_deps_bundler_api_lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'chore_deps', separator: '_' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('bundler')
+    expect(updatedDependencies[0].directory).toEqual('/api')
+  })
+
+  test('it handles a custom prefix with a dependency group', async () => {
+    const groupCommitMessage =
+      'Bumps the eslint group in /first-package with 1 update: [eslint](https://github.com/eslint/eslint).\n' +
+      '\n' +
+      'Updates `eslint` from 9.12.0 to 9.13.0\n' +
+      '\n' +
+      '---\n' +
+      'updated-dependencies:\n' +
+      '- dependency-name: eslint\n' +
+      '  dependency-type: direct:development\n' +
+      '  update-type: version-update:semver-minor\n' +
+      '  dependency-group: eslint\n' +
+      '...\n' +
+      '\n' +
+      'Signed-off-by: dependabot[bot] <support@github.com>'
+    const updatedDependencies = await updateMetadata.parse(groupCommitMessage, '', 'deps/npm_and_yarn/first-package/eslint-3c401b8a51', 'main', undefined, undefined, undefined, [{ prefix: 'deps', separator: '/' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/first-package')
+    expect(updatedDependencies[0].dependencyGroup).toEqual('eslint')
+  })
+
+  test('it prefers the longest matching prefix', async () => {
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'dependabot-deps/npm_and_yarn/lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'dependabot-deps', separator: '/' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/')
+  })
+
+  test('it still handles the default prefix', async () => {
+    const updatedDependencies = await updateMetadata.parse(commitMessage, '', 'dependabot/npm_and_yarn/lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'deps', separator: '/' }])
+
+    expect(updatedDependencies[0].packageEcosystem).toEqual('npm_and_yarn')
+    expect(updatedDependencies[0].directory).toEqual('/')
+  })
+
+  test('it returns an empty array when the branch does not start with a known prefix', async () => {
+    expect(await updateMetadata.parse(commitMessage, '', 'deps/npm_and_yarn/lodash-4.17.21', 'main')).toEqual([])
+    expect(await updateMetadata.parse(commitMessage, '', 'deps-npm_and_yarn-lodash-4.17.21', 'main', undefined, undefined, undefined, [{ prefix: 'deps', separator: '/' }])).toEqual([])
+  })
+})
